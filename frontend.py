@@ -15,8 +15,34 @@ def get_xyhw(face_pts:np):
     width = max_x-min_x
     return int(min_x), int(min_y), int(width), int(height)
 
-def draw_bbox(img, bbox, pc=(0,0,255), radius=2, lc=(0,255,0), thickness=2):
-    print(bbox)
+def landmark_to_response(landmark:np, init=False) -> dict:
+    '''
+    랜드마크 반환 시, 얼굴 부위별 반환
+    '''
+    landmark_info = {'jaw':[0, 17], 'eyebrow_l':[17,22], 'eyebrow_r':[22,27], 'nose':[27,36], \
+                'eye_left':[36,42], 'eye_right':[42,48],\
+                'mouth_out':[48,60], 'mouth_in':[60,68],}
+    landmark = landmark.astype(int) #.tolist()
+
+    face_landmark = {}
+    for key, value in landmark_info.items():
+        face_landmark[key] = dict()
+        face_landmark[key]["landmark"] = landmark[value[0]:value[1]].tolist()
+        # np.int64 반환되어 안되고 있던 문제로, int형으로 바꾸어 성공
+        # json 반환 시, 안에 담긴 숫자의 data type이 np.int64일 경우 반환 불가 -> int형으로 감싸 반환해야 함.
+        if init:
+            face_landmark[key]["bbox"] = get_xyhw(landmark[value[0]:value[1]])
+    return face_landmark
+
+def draw_bbox(img, face_landmark_bbox, pc=(0,0,255), radius=2, lc=(0,255,0), thickness=2):
+    print("draw_bbox")
+    landmark_info = {'jaw':[0, 17], 'eyebrow_l':[17,22], 'eyebrow_r':[22,27], 'nose':[27,36], \
+                'eye_left':[36,42], 'eye_right':[42,48],\
+                'mouth_out':[48,60], 'mouth_in':[60,68],}
+    for key, value in landmark_info.items():
+        x,y,height,width, = face_landmark_bbox[key]['bbox']
+        cv2.rectangle(img, (x, y), (x + height, y + width),
+                (0, 0, 255), thickness=2)
     return img
 
 
@@ -27,21 +53,24 @@ def closest_node(xy, pts):
         return -1
     return np.argmin(dist_2)
 
+## input ##
 img0 = cv2.imread("sample/prev-0-w.png")
 img = np.copy(img0)
 pts = np.loadtxt("sample/prev-0_face_open_mouth.txt")
-bbox = get_xyhw(pts)
+face_landmark_bbox = landmark_to_response(pts, init=True) # 얼굴 부위별로 bbox 관리 추가 
+node = -1
+
+img = draw_bbox(img, face_landmark_bbox)
 
 def click_adjust_wireframe(event, x, y, flags, param):
-    global img, pts, node, bbox
+    global img, pts, node, face_landmark_bbox
 
     def update_img(node, button_up=False):
-        global img, pts, bbox
+        global img, pts, face_landmark_bbox
 
         # update carton points object and get fresh pts list
         pts[node, 0], pts[node, 1] = x, y
 
-        img = draw_bbox(img, pts)
 
         # 랜드마크의 해당 좌표를 마우스로 클릭했을 때 확대 이미지가 함께 뜨도록 함.
         # zoom-in feature
