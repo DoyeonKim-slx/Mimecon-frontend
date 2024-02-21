@@ -56,7 +56,7 @@ def mouse_callback(event, x,y, flags, params):
         if mode == 'bl':
             dx = x-ox
             dw = ox-x
-            dh = oy-y
+            dh = y-oy
         if mode == 'bm':
             dh = y-oy
         if mode == 'br':
