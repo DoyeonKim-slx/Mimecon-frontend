@@ -2,20 +2,15 @@ import os
 import numpy as np
 import cv2
 
-def get_xyhw(face_pts:np):
+def cal_xy12(face_pts:np):
     min_x, min_y = min(face_pts[:, 0]), min(face_pts[:, 1])
     max_x, max_y = max(face_pts[:, 0]), max(face_pts[:, 1])
 
-    # margin = 0.13
-    # min_x = int(min_x * (1-margin))
-    # min_y = int(min_y * (1-margin))
-    # max_x = int(max_x * (1+margin))
-    # max_y = int(max_y * (1+margin))
     height = max_y-min_y
     width = max_x-min_x
-    return int(min_x), int(min_y), int(width), int(height)
+    return [int(min_x), int(min_y)], [int(max_x), int(max_y)]
 
-def landmark_to_response(landmark:np, init=False) -> dict:
+def get_bbox(landmark:np) -> dict:
     '''
     랜드마크 반환 시, 얼굴 부위별 반환
     '''
@@ -24,53 +19,68 @@ def landmark_to_response(landmark:np, init=False) -> dict:
                 'mouth_out':[48,60], 'mouth_in':[60,68],}
     landmark = landmark.astype(int) #.tolist()
 
-    face_landmark = {}
+    bbox_list = []
     for key, value in landmark_info.items():
-        face_landmark[key] = dict()
-        face_landmark[key]["landmark"] = landmark[value[0]:value[1]].tolist()
-        # np.int64 반환되어 안되고 있던 문제로, int형으로 바꾸어 성공
-        # json 반환 시, 안에 담긴 숫자의 data type이 np.int64일 경우 반환 불가 -> int형으로 감싸 반환해야 함.
-        if init:
-            face_landmark[key]["bbox"] = get_xyhw(landmark[value[0]:value[1]])
-    return face_landmark
+        xy12 = cal_xy12(landmark[value[0]:value[1]])
+        bbox_list.append(xy12[0])
+        bbox_list.append(xy12[1])
+    return bbox_list 
 
-def draw_bbox(img, face_landmark_bbox, pc=(0,0,255), radius=2, lc=(0,255,0), thickness=2):
-    print("draw_bbox")
-    landmark_info = {'jaw':[0, 17], 'eyebrow_l':[17,22], 'eyebrow_r':[22,27], 'nose':[27,36], \
-                'eye_left':[36,42], 'eye_right':[42,48],\
-                'mouth_out':[48,60], 'mouth_in':[60,68],}
-    for key, value in landmark_info.items():
-        x,y,height,width, = face_landmark_bbox[key]['bbox']
-        cv2.rectangle(img, (x, y), (x + height, y + width),
-                (0, 0, 255), thickness=2)
+def draw_bbox(img, bbox_info_list, pc=(0,0,255), radius=5, lc=(0,255,0), thickness=2):
+    # landmark_info = {'jaw':[0, 17], 'eyebrow_l':[17,22], 'eyebrow_r':[22,27], 'nose':[27,36], \
+    #             'eye_left':[36,42], 'eye_right':[42,48],\
+    #             'mouth_out':[48,60], 'mouth_in':[60,68],}
+    
+    for idx in range(0, len(bbox_info_list), 2):
+        x1,y1, = bbox_info_list[idx]
+        x2,y2, = bbox_info_list[idx+1]
+        cv2.rectangle(img, (x1, y1), (x2,y2), pc, thickness=2)
+        cv2.circle(img, (x1, y1), radius, pc, -1)
+        cv2.circle(img, (x2,y2), radius, pc, -1)
     return img
 
-
-def closest_node(xy, pts):
+def closest_node(xy, bbox_info_list):
     #search the list of nodes for the one closest to node, return the name
-    dist_2 = np.sqrt(np.sum((pts - np.array(xy).reshape((-1, 2)))**2, axis=1))
+    dist_2 = np.sqrt(np.sum((bbox_info_list - np.array(xy).reshape((-1, 2)))**2, axis=1))
     if (dist_2[np.argmin(dist_2)] > 20):
         return -1
     return np.argmin(dist_2)
+
+def closest_coordinate(xy, bbox_info_list):
+    min_distance = float('inf')
+    closest_coord = None
+    closest_idx = None
+
+    for idx, coord in enumerate(bbox_info_list):
+        distance = np.linalg.norm(np.array(coord) - np.array(xy))
+        if distance < min_distance:
+            min_distance = distance
+            closest_coord = coord
+            closest_idx = idx
+    
+
+    return closest_idx
 
 ## input ##
 img0 = cv2.imread("sample/prev-0-w.png")
 img = np.copy(img0)
 pts = np.loadtxt("sample/prev-0_face_open_mouth.txt")
-face_landmark_bbox = landmark_to_response(pts, init=True) # 얼굴 부위별로 bbox 관리 추가 
+bbox_info_list = get_bbox(pts) 
+print(bbox_info_list)
 node = -1
 
-img = draw_bbox(img, face_landmark_bbox)
+img = draw_bbox(img, bbox_info_list)
 
 def click_adjust_wireframe(event, x, y, flags, param):
-    global img, pts, node, face_landmark_bbox
+    global img, pts, node, bbox_info_list
 
     def update_img(node, button_up=False):
-        global img, pts, face_landmark_bbox
+        global img, pts, bbox_info_list
 
         # update carton points object and get fresh pts list
-        pts[node, 0], pts[node, 1] = x, y
-
+        # xy 좌표를 받아와 해당 좌표를 pts 변수에 업데이트
+        # bbox의 좌표를 받아와 업데이트 해서 결과 이미지에 그림 그려주면 됨. 
+        bbox_info_list[node][0], bbox_info_list[node][1] = x, y
 
         # 랜드마크의 해당 좌표를 마우스로 클릭했을 때 확대 이미지가 함께 뜨도록 함.
         # zoom-in feature
@@ -97,15 +107,17 @@ def click_adjust_wireframe(event, x, y, flags, param):
                           (0, 0, 255), thickness=2)
             
     if event == cv2.EVENT_LBUTTONDOWN:
+        print("EVENT_LBUTTONDOWN")
         # search for nearest point
-        # 왼쪽 마우스 버튼 눌렀을 때 좌표 가져오기
-        node = closest_node((x, y), pts)
+        # 왼쪽 마우스 버튼 눌렀을 때 가까운 node 가져오기
+        # x, y는 EVENT_LBUTTONDOWN의 반환 값
+        node = closest_coordinate((x, y), bbox_info_list)
         if(node >=0):
             update_img(node)
 
     if event == cv2.EVENT_LBUTTONUP:
         # 왼쪽 마우스 버튼을 뗐을 때 좌표 가져오기
-        node = closest_node((x, y), pts)
+        node = closest_coordinate((x, y), bbox_info_list)
         if (node >= 0):
             update_img(node, button_up=True)
         node = -1
@@ -115,7 +127,7 @@ def click_adjust_wireframe(event, x, y, flags, param):
         if (node != -1):
             update_img(node)
             
-
+# draw_bbox(img, bbox_info_list)
 
 cv2.namedWindow("frontend", cv2.WINDOW_NORMAL)
 cv2.setMouseCallback("frontend", click_adjust_wireframe)
