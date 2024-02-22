@@ -199,8 +199,13 @@ while True:
         break
 cv2.destroyAllWindows()
 
-new_pts = np.zeros_like(pts0)
-for name, groups in landmark_groups.items():
+results = {}
+for name, group in landmark_groups.items():
     (start_i, end_i) = LANDMARK_INFO[name]
-    new_pts[start_i:end_i] = groups.get_pts()
-print(new_pts)
+    landmarks = group.get_pts()
+    bbox = get_bbox(landmarks)
+    results[name] = {
+        'landmarks': landmarks.tolist(),
+        'bbox': bbox.tolist(),
+    }
+print(results)
