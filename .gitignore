@@ -1,2 +1,5 @@
 *.exe
 *.pyc
+build/
+dist/
+main.spec

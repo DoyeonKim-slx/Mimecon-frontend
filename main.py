@@ -2,8 +2,8 @@ import os
 import numpy as np
 import cv2
 
-img0 = cv2.imread("sample/prev-0-w.png")
-pts0 = np.loadtxt("sample/prev-0_face_open_mouth.txt")[:, :2]
+img0 = cv2.imread("sample/img.png")
+pts0 = np.loadtxt("sample/landmark.txt")[:, :2]
 LANDMARK_INFO = {
     'eyebrow_l':[17,22],
     'eyebrow_r':[22,27],
@@ -209,3 +209,5 @@ for name, group in landmark_groups.items():
         'bbox': bbox.tolist(),
     }
 print(results)
+import os
+os.system("pause")
